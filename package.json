@@ -1,0 +1,32 @@
+{
+  "name": "learning-mcp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/client.js",
+  "scripts": {
+    "start:server": "node src/server.js",
+    "start:client": "node src/client.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/victorekpo/learning-mcp.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/victorekpo/learning-mcp/issues"
+  },
+  "homepage": "https://github.com/victorekpo/learning-mcp#readme",
+  "dependencies": {
+    "@modelcontextprotocol/client": "^2.4.0",
+    "@modelcontextprotocol/server": "^2.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
