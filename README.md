@@ -19,11 +19,20 @@ MCP is an open protocol that standardizes how AI clients (like Claude, ChatGPT, 
 
 ```
 src/
-  server.js     → MCP server (stdio) with two tools
-  client.js     → MCP client that connects and calls those tools
+  1-stdio/
+    server.js         → MCP server (stdio transport)
+    client.js         → MCP client — spawns server as subprocess
+  2-streaming-http/
+    server.js         → MCP HTTP server (port 3000)
+    client.js         → MCP client — connects over HTTP
+    utils/
+      mcp.js          → McpServer factory (one per session)
+      tools.js        → tool definitions
+      sessions.js     → session lifecycle (create, route, close)
+      logger.js       → request/response logger
 workspace/
-  hello.txt     → sandbox folder the server can read
-learning/       → deep-dive markdown notes
+  hello.txt           → sandbox folder the server can read
+learning/             → deep-dive markdown notes
 ```
 
 ---
@@ -32,7 +41,13 @@ learning/       → deep-dive markdown notes
 
 ```bash
 npm install
-npm run start:client
+
+# stdio (client spawns the server automatically)
+npm run start:stdio
+
+# streamable HTTP (run in two terminals)
+node src/2-streaming-http/server.js
+node src/2-streaming-http/client.js
 ```
 
 ---

@@ -19,103 +19,204 @@ It supports both:
 
 ---
 
-## How It Works
+## How This Repo Uses It (`src/2-streaming-http/`)
 
-### Client → Server: HTTP POST
-
-The client sends JSON-RPC messages via HTTP POST to a single endpoint (e.g., `/mcp`):
+The implementation is split into focused files:
 
 ```
-POST /mcp HTTP/1.1
-Content-Type: application/json
-
-{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
+src/2-streaming-http/
+  server.js          → HTTP server entry point (port 3000)
+  client.js          → MCP client over HTTP
+  utils/
+    mcp.js           → creates a new McpServer per session
+    tools.js         → registers tools on the server
+    sessions.js      → manages session lifecycle (create, route, close)
+    logger.js        → logs incoming requests and response status
 ```
-
-### Server → Client: SSE or HTTP Response
-
-The server can respond:
-1. **Directly in the HTTP response body** (for simple request/response)
-2. **Via Server-Sent Events (SSE)** for streaming results or notifications
 
 ---
 
-## Server Example (Node.js)
+## Server Entry Point (`server.js`)
+
+The server is a plain Node.js `http.createServer`. All MCP logic is delegated to the session utilities.
+
+```javascript
+import http from "node:http";
+import { createSession, handleSessionRequest } from "./utils/sessions.js";
+import { logRequest } from "./utils/logger.js";
+
+async function handleRequest(req, res) {
+  logRequest(req, res);
+
+  if (req.url !== "/mcp") {
+    res.writeHead(404);
+    res.end("Not Found");
+    return;
+  }
+
+  const sessionId = req.headers["mcp-session-id"];
+
+  // Requests without a session ID initialize a new session.
+  if (!sessionId && req.method === "POST") {
+    await createSession(req, res);
+    return;
+  }
+
+  await handleSessionRequest(sessionId, req, res);
+}
+
+http.createServer(handleRequest).listen(3000, "127.0.0.1", () => {
+  console.log("MCP server running at http://localhost:3000/mcp");
+});
+```
+
+---
+
+## Transport: `NodeStreamableHTTPServerTransport`
+
+Comes from `@modelcontextprotocol/node`. Used in **stateful mode** — each session gets a unique ID via `sessionIdGenerator`.
+
+```javascript
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
+
+const transport = new NodeStreamableHTTPServerTransport({
+  sessionIdGenerator: () => randomUUID()
+});
+```
+
+> For **stateless** mode (e.g. serverless), pass `sessionIdGenerator: undefined` — no session ID is assigned and no state is kept between requests.
+
+---
+
+## Session Management (`utils/sessions.js`)
+
+Each connected client gets its own `McpServer` + `transport` pair, stored in a `Map` by session ID.
+
+```javascript
+// In-memory session store
+const sessions = new Map();  // sessionId → { server, transport }
+
+export async function createSession(req, res) {
+  const server = createMcpServer();
+  const transport = new NodeStreamableHTTPServerTransport({
+    sessionIdGenerator: () => randomUUID()
+  });
+
+  transport.onclose = () => sessions.delete(transport.sessionId);
+
+  await server.connect(transport);
+  await transport.handleRequest(req, res);  // responds with the session ID
+
+  if (transport.sessionId) {
+    sessions.set(transport.sessionId, { server, transport });
+  }
+}
+
+export async function handleSessionRequest(sessionId, req, res) {
+  const session = sessions.get(sessionId);
+  if (!session) { res.writeHead(404); res.end("MCP session not found"); return; }
+
+  await session.transport.handleRequest(req, res);
+
+  // Clean up on DELETE
+  if (req.method === "DELETE") await closeSession(sessionId);
+}
+```
+
+---
+
+## MCP Server Factory (`utils/mcp.js`)
+
+A new `McpServer` is created for every session. This gives each client full isolation.
 
 ```javascript
 import { McpServer } from "@modelcontextprotocol/server";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/server/streamable-http";
-import express from "express";
+import { registerTools } from "./tools.js";
 
-const app = express();
-app.use(express.json());
-
-const server = new McpServer({ name: "my-http-server", version: "1.0.0" });
-
-server.registerTool("ping", { description: "Ping the server" }, async () => ({
-  content: [{ type: "text", text: "pong" }]
-}));
-
-app.post("/mcp", async (req, res) => {
-  const transport = new StreamableHTTPServerTransport({ req, res });
-  await server.connect(transport);
-});
-
-app.listen(3000, () => console.log("MCP server on http://localhost:3000/mcp"));
+export function createMcpServer() {
+  const server = new McpServer({ name: "vic-mcp-server", version: "1.0.0" });
+  server.onerror = (error) => console.error("MCP Server Error:", error);
+  registerTools(server);
+  return server;
+}
 ```
 
-## Client Example
+---
+
+## Client (`client.js`)
+
+The client uses `StreamableHTTPClientTransport` from `@modelcontextprotocol/client`. It connects to the running server over HTTP — **it does not spawn a subprocess**.
 
 ```javascript
-import { Client } from "@modelcontextprotocol/client";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client/streamable-http";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
-const client = new Client({ name: "my-client", version: "1.0.0" });
+const client = new Client({ name: "vic-mcp-client", version: "1.0.0" });
 
+// Unlike stdio, the client does not launch the server process.
 const transport = new StreamableHTTPClientTransport(
   new URL("http://localhost:3000/mcp")
 );
 
 await client.connect(transport);
-const { tools } = await client.listTools();
-console.log(tools);
+```
+
+The transport automatically sends the `Mcp-Session-Id` header on all requests after the initial `initialize`.
+
+---
+
+## Request Flow
+
+```
+Client                              Server (port 3000)
+  │                                       │
+  │── POST /mcp (no session ID) ─────────▶│  createSession()
+  │◀─ 200 + Mcp-Session-Id: abc123 ───────│  sessions.set("abc123", ...)
+  │                                       │
+  │── POST /mcp (Mcp-Session-Id: abc123) ─▶│  handleSessionRequest()
+  │◀─ tools/list response ─────────────────│
+  │                                       │
+  │── POST /mcp (Mcp-Session-Id: abc123) ─▶│  tools/call
+  │◀─ tool result ──────────────────────────│
+  │                                       │
+  │── DELETE /mcp (Mcp-Session-Id: abc123)─▶│  closeSession()
 ```
 
 ---
 
-## Session Management
+## Running It
 
-Streamable HTTP uses a **session ID** (sent as a header) so a stateful server can track which client is which across multiple HTTP requests:
-
+Start the server first (it's a persistent process):
+```bash
+node src/2-streaming-http/server.js
 ```
-Mcp-Session-Id: abc123xyz
-```
 
-The server assigns this ID during `initialize` and the client includes it in every subsequent request.
-
----
-
-## Streaming Responses
-
-For long-running tools (file processing, web scraping, etc.), the server can stream partial results back using SSE:
-
-```
-HTTP/1.1 200 OK
-Content-Type: text/event-stream
-
-data: {"jsonrpc":"2.0","method":"notifications/progress","params":{"progress":0.5}}
-
-data: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"done"}]}}
+Then in a separate terminal, run the client:
+```bash
+node src/2-streaming-http/client.js
 ```
 
 ---
 
-## Stateless vs Stateful Servers
+## Stateless vs Stateful
 
-| Mode | Description | Use Case |
+| Mode | `sessionIdGenerator` | Use Case |
 |---|---|---|
-| **Stateless** | Each request is independent, no session | Simple tools, serverless |
-| **Stateful** | Session ID ties requests together | Multi-step workflows, subscriptions |
+| **Stateful** | `() => randomUUID()` | Multi-step workflows, persistent sessions |
+| **Stateless** | `undefined` | Serverless, single-request tools |
+
+This repo uses **stateful** mode.
+
+---
+
+## stdio vs Streamable HTTP — This Repo
+
+| | `src/1-stdio/` | `src/2-streaming-http/` |
+|---|---|---|
+| Transport | `StdioServerTransport` / `StdioClientTransport` | `NodeStreamableHTTPServerTransport` / `StreamableHTTPClientTransport` |
+| Server start | Client spawns it as subprocess | Started independently on port 3000 |
+| Sessions | One client only | Many clients, each with their own session |
+| `console.log` safe? | ❌ corrupts stdio | ✅ fine |
+| Auth needed | No | Yes in production |
 
 ---
 
@@ -128,19 +229,6 @@ Unlike stdio, HTTP servers are network-exposed. See [09-security.md](09-security
 
 ---
 
-## stdio vs Streamable HTTP Summary
-
-| | stdio | Streamable HTTP |
-|---|---|---|
-| Location | Same machine | Any network |
-| Clients | 1 (spawning process) | Many |
-| Auth needed | No | Yes |
-| Streaming | No | Yes (SSE) |
-| Deployment | Local subprocess | Server / cloud |
-
----
-
 ## Next
 
 → [05-tools.md](05-tools.md)
-
