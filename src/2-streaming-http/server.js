@@ -35,3 +35,6 @@ async function handleRequest(req, res) {
 http.createServer(handleRequest).listen(3000, "127.0.0.1", () => {
   console.log("MCP server running at http://localhost:3000/mcp");
 });
+
+// Temporary tunnel to expose server
+// cloudflared --config /dev/null tunnel --url http://127.0.0.1:3000
