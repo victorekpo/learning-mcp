@@ -2,10 +2,11 @@
   "name": "learning-mcp",
   "version": "1.0.0",
   "description": "",
-  "main": "src/client.js",
+  "main": "src/1-stdio/client.js",
   "scripts": {
-    "start:server": "node src/server.js",
-    "start:client": "node src/client.js"
+    "start:stdio": "node src/1-stdio/client.js",
+    "start:client:2": "node src/2-stdio/client.js",
+    "start:server:2": "node src/2-stdio/server.js"
   },
   "repository": {
     "type": "git",
@@ -21,6 +22,7 @@
   "homepage": "https://github.com/victorekpo/learning-mcp#readme",
   "dependencies": {
     "@modelcontextprotocol/client": "^2.4.0",
+    "@modelcontextprotocol/node": "^2.1.2",
     "@modelcontextprotocol/server": "^2.4.0",
     "zod": "^4.6.7"
   },

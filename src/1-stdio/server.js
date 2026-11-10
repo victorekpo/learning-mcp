@@ -13,7 +13,7 @@ const server = new McpServer({
 
 const workspace = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../workspace"
+  "../../workspace"
 );
 
 // registerTool() defines a tool that clients can discover and call.
