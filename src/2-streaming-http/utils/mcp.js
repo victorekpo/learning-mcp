@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/server";
-import { registerTools } from "./tools.js";
+import { registerGetSystemInfoTool } from "../tools/systemInfo/index.js";
+import { registerListFilesTool } from "../tools/listFiles/index.js";
 
 // Create a separate MCP server for each client session.
 export function createMcpServer() {
@@ -12,7 +13,9 @@ export function createMcpServer() {
     console.error("MCP Server Error:", error);
   };
 
-  registerTools(server);
+  // Register tools
+  registerGetSystemInfoTool(server);
+  registerListFilesTool(server);
 
   return server;
 }
