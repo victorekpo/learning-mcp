@@ -5,8 +5,8 @@
   "main": "src/1-stdio/client.js",
   "scripts": {
     "start:stdio": "node src/1-stdio/client.js",
-    "start:client:2": "node src/2-streaming-http/client.js",
-    "start:server:2": "node src/2-streaming-http/server.js"
+    "start:client": "node src/2-streaming-http/client.js",
+    "start:server": "node src/2-streaming-http/server.js"
   },
   "repository": {
     "type": "git",
