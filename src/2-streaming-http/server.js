@@ -1,18 +1,16 @@
-
 import http from "node:http";
+import express from "express";
 import { createSession, handleSessionRequest } from "./utils/sessions.js";
 import { logRequest } from "./utils/logger.js";
 
-// Handle incoming MCP HTTP requests.
-async function handleRequest(req, res) {
+const app = express();
+
+// Handle incoming MCP HTTP requests for all methods.
+// app.all("/mcp", ...) handles POST, GET, DELETE, and other methods,
+// leaving the existing session transport to process them.
+app.all("/mcp", async (req, res) => {
   try {
     logRequest(req, res);
-
-    if (req.url !== "/mcp") {
-      res.writeHead(404);
-      res.end("Not Found");
-      return;
-    }
 
     const sessionId = req.headers["mcp-session-id"];
 
@@ -29,11 +27,28 @@ async function handleRequest(req, res) {
     if (!res.headersSent) res.writeHead(500);
     if (!res.writableEnded) res.end("Internal Server Error");
   }
-}
+});
 
-// Expose the MCP endpoint on port 3000.
-http.createServer(handleRequest).listen(3000, "127.0.0.1", () => {
-  console.log("MCP server running at http://localhost:3000/mcp");
+// JSON parsing for any additional API routes goes AFTER /mcp.
+app.use(express.json());
+
+// Example regular Express route.
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
+// Handle unmatched routes.
+app.use((req, res) => {
+  res.status(404).send("Not Found");
+});
+
+// Instantiate the HTTP server
+const server = http.createServer(app);
+
+// Listen on port and start the server
+server.listen(3000, "127.0.0.1", () => {
+  console.log("Express server running at http://localhost:3000");
+  console.log("MCP endpoint: http://localhost:3000/mcp");
 });
 
 // Temporary tunnel to expose server
