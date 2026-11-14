@@ -9,7 +9,7 @@ export function createMcpServer() {
     version: "1.0.0"
   });
 
-  server.onerror = (error) => {
+  server.server.onerror = (error) => {
     console.error("MCP Server Error:", error);
   };
 
